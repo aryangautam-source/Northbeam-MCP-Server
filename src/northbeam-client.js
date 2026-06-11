@@ -1,119 +1,136 @@
 import axios from 'axios';
 
-    class NorthbeamClient {
-      constructor() {
-        this.apiKey = process.env.NORTHBEAM_API_KEY;
-        this.brand = process.env.NORTHBEAM_BRAND;
-        this.baseUrl = 'https://api.northbeam.io/v1';
-        this.client = axios.create({
-          baseURL: this.baseUrl,
-          headers: {
-            'Content-Type': 'application/json',
-            'X-API-KEY': this.apiKey
-          }
-        });
+class NorthbeamClient {
+  constructor() {
+    this.apiKey = process.env.NORTHBEAM_API_KEY;
+    this.clientId = process.env.NORTHBEAM_CLIENT_ID;
+    this.baseUrl = 'https://api.northbeam.io/v1';
+    this.client = axios.create({
+      baseURL: this.baseUrl,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Basic ${this.apiKey}`,
+        'Data-Client-ID': this.clientId,
+        'accept': 'application/json'
+      }
+    });
+  }
+
+  async listMetrics() {
+    try {
+      const response = await this.client.get('/exports/metrics');
+      return response.data;
+    } catch (error) {
+      this._handleError(error);
+    }
+  }
+
+  async listDimensions() {
+    try {
+      const response = await this.client.get('/exports/breakdowns');
+      return response.data;
+    } catch (error) {
+      this._handleError(error);
+    }
+  }
+
+  async createExport(options) {
+    try {
+      const response = await this.client.post('/exports/data-export', options);
+      return response.data.id;
+    } catch (error) {
+      this._handleError(error);
+    }
+  }
+
+  async pollExport(exportId) {
+    const maxAttempts = 60;
+    const delayMs = 5000;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const response = await this.client.get(`/exports/data-export/result/${exportId}`);
+      const { status, result } = response.data;
+
+      if (status === 'SUCCESS') {
+        return result[0];
+      } else if (status === 'ERROR') {
+        throw new Error(`Export failed for export ID: ${exportId}`);
       }
 
-      async getMetric(metricName, startDate, endDate, dimensions = []) {
-        try {
-          const params = {
-            brand: this.brand,
-            metrics: [metricName],
-            ...(startDate && { start_date: startDate }),
-            ...(endDate && { end_date: endDate }),
-            ...(dimensions.length > 0 && { dimensions })
-          };
-
-          const response = await this.client.post('/query', params);
-          return response.data;
-        } catch (error) {
-          this._handleError(error);
-        }
-      }
-
-      async listMetrics() {
-        try {
-          const response = await this.client.get(`/brands/${this.brand}/metrics`);
-          return response.data;
-        } catch (error) {
-          this._handleError(error);
-        }
-      }
-
-      async listDimensions() {
-        try {
-          const response = await this.client.get(`/brands/${this.brand}/dimensions`);
-          return response.data;
-        } catch (error) {
-          this._handleError(error);
-        }
-      }
-
-      async getChannelPerformance(startDate, endDate, metrics) {
-        try {
-          const params = {
-            brand: this.brand,
-            start_date: startDate,
-            end_date: endDate,
-            metrics: metrics,
-            dimensions: ['channel']
-          };
-
-          const response = await this.client.post('/query', params);
-          return response.data;
-        } catch (error) {
-          this._handleError(error);
-        }
-      }
-
-      async getCohortAnalysis(cohortType, startDate, endDate, metrics) {
-        try {
-          const params = {
-            brand: this.brand,
-            start_date: startDate,
-            end_date: endDate,
-            metrics: metrics,
-            cohort_type: cohortType
-          };
-
-          const response = await this.client.post('/cohorts', params);
-          return response.data;
-        } catch (error) {
-          this._handleError(error);
-        }
-      }
-
-      async getAttribution(model, startDate, endDate, metrics) {
-        try {
-          const params = {
-            brand: this.brand,
-            start_date: startDate,
-            end_date: endDate,
-            metrics: metrics,
-            attribution_model: model
-          };
-
-          const response = await this.client.post('/attribution', params);
-          return response.data;
-        } catch (error) {
-          this._handleError(error);
-        }
-      }
-
-      _handleError(error) {
-        if (error.response) {
-          // The request was made and the server responded with a status code
-          // that falls out of the range of 2xx
-          const errorMessage = error.response.data.message || JSON.stringify(error.response.data);
-          throw new Error(`API Error (${error.response.status}): ${errorMessage}`);
-        } else if (error.request) {
-          // The request was made but no response was received
-          throw new Error('No response received from Northbeam API');
-        } else {
-          // Something happened in setting up the request that triggered an Error
-          throw new Error(`Request Error: ${error.message}`);
-        }
-      }
+      await new Promise(resolve => setTimeout(resolve, delayMs));
     }
 
-    export const northbeamClient = new NorthbeamClient();
+    throw new Error('Export timed out after 5 minutes');
+  }
+
+  async getChannelPerformance(startDate, endDate, metrics) {
+    try {
+      const exportId = await this.createExport({
+        level: 'ad',
+        time_granularity: 'DAILY',
+        period_type: 'CUSTOM',
+        start_date: startDate,
+        end_date: endDate,
+        options: {
+          export_aggregation: 'BREAKDOWN',
+          remove_zero_spend: false,
+          aggregate_data: false
+        },
+        attribution_options: {
+          attribution_models: ['northbeam_custom', 'last_touch', 'first_touch'],
+          accounting_modes: ['accrual'],
+          attribution_windows: ['1']
+        },
+        metrics: metrics.map(id => ({ id }))
+      });
+
+      const downloadUrl = await this.pollExport(exportId);
+      const csvResponse = await axios.get(downloadUrl);
+      return csvResponse.data;
+    } catch (error) {
+      this._handleError(error);
+    }
+  }
+
+  async getAttribution(model, startDate, endDate, metrics) {
+    try {
+      const exportId = await this.createExport({
+        level: 'ad',
+        time_granularity: 'DAILY',
+        period_type: 'CUSTOM',
+        start_date: startDate,
+        end_date: endDate,
+        options: {
+          export_aggregation: 'BREAKDOWN',
+          remove_zero_spend: false,
+          aggregate_data: false
+        },
+        attribution_options: {
+          attribution_models: [model],
+          accounting_modes: ['accrual'],
+          attribution_windows: ['1']
+        },
+        metrics: metrics.map(id => ({ id }))
+      });
+
+      const downloadUrl = await this.pollExport(exportId);
+      const csvResponse = await axios.get(downloadUrl);
+      return csvResponse.data;
+    } catch (error) {
+      this._handleError(error);
+    }
+  }
+
+  _handleError(error) {
+    if (error.response) {
+      const errorMessage = error.response.data.message || JSON.stringify(error.response.data);
+      throw new Error(`API Error (${error.response.status}): ${errorMessage}`);
+    } else if (error.request) {
+      throw new Error('No response received from Northbeam API');
+    } else {
+      throw new Error(`Request Error: ${error.message}`);
+    }
+  }
+}
+
+export const northbeamClient = new NorthbeamClient();
