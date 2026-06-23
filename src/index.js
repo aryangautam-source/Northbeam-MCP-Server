@@ -85,7 +85,16 @@ async function handleMcpRequest(req, res) {
       return res.status(404).json({ error: 'Session not found' });
     }
 
-    // For POST (initialize or subsequent requests), create a fresh server + transport per session
+    // For POST requests with an existing session ID, reuse the existing transport
+    if (req.method === 'POST') {
+      const sessionId = req.headers['mcp-session-id'];
+      if (sessionId && transports.has(sessionId)) {
+        await transports.get(sessionId).handleRequest(req, res, req.body);
+        return;
+      }
+    }
+
+    // For POST (initialize) without a session ID, create a fresh server + transport
     const server = createServer();
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
