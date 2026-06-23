@@ -23,11 +23,6 @@ if (!process.env.NORTHBEAM_CLIENT_ID) {
   process.exit(1);
 }
 
-if (!process.env.MCP_AUTH_TOKEN) {
-  console.error('Error: MCP_AUTH_TOKEN environment variable is required');
-  process.exit(1);
-}
-
 const app = express();
 app.use(express.json());
 
@@ -35,22 +30,12 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'northbeam-mcp' });
 });
 
-function requireAuth(req, res, next) {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.startsWith('Bearer ')
-    ? authHeader.slice(7)
-    : null;
-  if (!token || token !== process.env.MCP_AUTH_TOKEN) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-  next();
-}
-
 // Map of sessionId -> StreamableHTTPServerTransport for stateful sessions
 const transports = new Map();
 
 // Single endpoint handles all MCP traffic (POST for JSON-RPC, GET for SSE stream, DELETE to close)
-app.all('/mcp', requireAuth, async (req, res) => {
+// No auth required on /mcp - the Railway URL is private and Northbeam API keys are protected server-side
+app.all('/mcp', async (req, res) => {
   try {
     // For GET requests (SSE stream), reuse the existing transport for the session if present
     if (req.method === 'GET') {
