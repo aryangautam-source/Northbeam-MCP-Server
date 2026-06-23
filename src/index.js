@@ -30,6 +30,12 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'northbeam-mcp' });
 });
 
+// Log all incoming requests to help diagnose connection issues
+app.use((req, _res, next) => {
+  console.error(`[${new Date().toISOString()}] ${req.method} ${req.path} | accept: ${req.headers['accept'] || '(none)'} | auth: ${req.headers['authorization'] ? 'present' : 'none'}`);
+  next();
+});
+
 // Middleware: ensure /mcp requests always carry the Accept header required by StreamableHTTPServerTransport.
 // Some MCP clients (including manus-mcp-cli) don't send it, causing a 406 Not Acceptable error.
 // NOTE: The underlying @hono/node-server reads from req.rawHeaders (the flat array), not req.headers,
