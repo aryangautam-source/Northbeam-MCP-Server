@@ -32,12 +32,24 @@ app.get('/health', (req, res) => {
 
 // Middleware: ensure /mcp requests always carry the Accept header required by StreamableHTTPServerTransport.
 // Some MCP clients (including manus-mcp-cli) don't send it, causing a 406 Not Acceptable error.
+// NOTE: The underlying @hono/node-server reads from req.rawHeaders (the flat array), not req.headers,
+// so we must patch both to ensure the injected value is visible to the transport.
 app.use('/mcp', (req, _res, next) => {
   const accept = req.headers['accept'] || '';
   if (!accept.includes('text/event-stream')) {
-    req.headers['accept'] = accept
+    const newAccept = accept
       ? `${accept}, application/json, text/event-stream`
       : 'application/json, text/event-stream';
+    // Patch the parsed headers object (used by Express)
+    req.headers['accept'] = newAccept;
+    // Patch rawHeaders (flat array used by @hono/node-server inside StreamableHTTPServerTransport)
+    const rawHeaders = req.rawHeaders;
+    const acceptIdx = rawHeaders.findIndex((v, i) => i % 2 === 0 && v.toLowerCase() === 'accept');
+    if (acceptIdx !== -1) {
+      rawHeaders[acceptIdx + 1] = newAccept;
+    } else {
+      rawHeaders.push('Accept', newAccept);
+    }
   }
   next();
 });
