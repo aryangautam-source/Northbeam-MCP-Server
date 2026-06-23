@@ -30,6 +30,18 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'northbeam-mcp' });
 });
 
+// Middleware: ensure /mcp requests always carry the Accept header required by StreamableHTTPServerTransport.
+// Some MCP clients (including manus-mcp-cli) don't send it, causing a 406 Not Acceptable error.
+app.use('/mcp', (req, _res, next) => {
+  const accept = req.headers['accept'] || '';
+  if (!accept.includes('text/event-stream')) {
+    req.headers['accept'] = accept
+      ? `${accept}, application/json, text/event-stream`
+      : 'application/json, text/event-stream';
+  }
+  next();
+});
+
 // Map of sessionId -> StreamableHTTPServerTransport for stateful sessions
 const transports = new Map();
 
