@@ -71,7 +71,7 @@ class NorthbeamClient {
       const exportId = await this.createExport({
         level: 'ad',
         time_granularity: 'DAILY',
-        period_type: 'CUSTOM',
+        period_type: 'FIXED',
         start_date: startDate,
         end_date: endDate,
         options: {
@@ -100,7 +100,7 @@ class NorthbeamClient {
       const exportId = await this.createExport({
         level: 'ad',
         time_granularity: 'DAILY',
-        period_type: 'CUSTOM',
+        period_type: 'FIXED',
         start_date: startDate,
         end_date: endDate,
         options: {
