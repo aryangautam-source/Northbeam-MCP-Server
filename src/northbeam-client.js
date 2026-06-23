@@ -73,8 +73,8 @@ class NorthbeamClient {
         time_granularity: 'DAILY',
         period_type: 'FIXED',
         period_options: {
-          start_date: startDate,
-          end_date: endDate
+          period_starting_at: startDate,
+          period_ending_at: endDate
         },
         options: {
           export_aggregation: 'BREAKDOWN',
@@ -104,8 +104,8 @@ class NorthbeamClient {
         time_granularity: 'DAILY',
         period_type: 'FIXED',
         period_options: {
-          start_date: startDate,
-          end_date: endDate
+          period_starting_at: startDate,
+          period_ending_at: endDate
         },
         options: {
           export_aggregation: 'BREAKDOWN',
