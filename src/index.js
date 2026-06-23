@@ -45,32 +45,27 @@ function requireAuth(req, res, next) {
   next();
 }
 
-app.post('/mcp', requireAuth, async (req, res) => {
-  try {
-    const transport = new SSEServerTransport('/mcp', res);
-    await server.connect(transport);
-    await transport.handlePostMessage(req, res, req.body);
-  } catch (error) {
-    console.error('MCP request error:', error);
-    if (!res.headersSent) {
-      res.status(500).json({ error: 'Internal server error' });
-    }
-  }
-});
+const transports = {};
 
 app.get('/mcp', requireAuth, async (req, res) => {
-  try {
-    const transport = new SSEServerTransport('/mcp', res);
-    await server.connect(transport);
-  } catch (error) {
-    console.error('MCP request error:', error);
-    if (!res.headersSent) {
-      res.status(500).json({ error: 'Internal server error' });
-    }
+  const transport = new SSEServerTransport('/messages', res);
+  transports[transport.sessionId] = transport;
+  res.on('close', () => {
+    delete transports[transport.sessionId];
+  });
+  await server.connect(transport);
+});
+
+app.post('/messages', requireAuth, async (req, res) => {
+  const sessionId = req.query.sessionId;
+  const transport = transports[sessionId];
+  if (!transport) {
+    return res.status(400).json({ error: 'No transport for session' });
   }
+  await transport.handlePostMessage(req, res);
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.error(`Northbeam MCP server running on port ${PORT}`);
 });
