@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { randomUUID } from 'crypto';
 import dotenv from 'dotenv';
 import express from 'express';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
-const { SSEServerTransport } = await import('@modelcontextprotocol/sdk/server/sse.js');
+const { StreamableHTTPServerTransport } = await import('@modelcontextprotocol/sdk/server/streamableHttp.js');
 const { server } = await import('./server.js');
 
 console.error('Starting Northbeam MCP server...');
@@ -45,24 +46,56 @@ function requireAuth(req, res, next) {
   next();
 }
 
-const transports = {};
+// Map of sessionId -> StreamableHTTPServerTransport for stateful sessions
+const transports = new Map();
 
-app.get('/mcp', requireAuth, async (req, res) => {
-  const transport = new SSEServerTransport('/messages', res);
-  transports[transport.sessionId] = transport;
-  res.on('close', () => {
-    delete transports[transport.sessionId];
-  });
-  await server.connect(transport);
-});
+// Single endpoint handles all MCP traffic (POST for JSON-RPC, GET for SSE stream, DELETE to close)
+app.all('/mcp', requireAuth, async (req, res) => {
+  try {
+    // For GET requests (SSE stream), reuse the existing transport for the session if present
+    if (req.method === 'GET') {
+      const sessionId = req.headers['mcp-session-id'];
+      if (sessionId && transports.has(sessionId)) {
+        const transport = transports.get(sessionId);
+        await transport.handleRequest(req, res);
+        return;
+      }
+    }
 
-app.post('/messages', requireAuth, async (req, res) => {
-  const sessionId = req.query.sessionId;
-  const transport = transports[sessionId];
-  if (!transport) {
-    return res.status(400).json({ error: 'No transport for session' });
+    // For DELETE requests, close the session transport
+    if (req.method === 'DELETE') {
+      const sessionId = req.headers['mcp-session-id'];
+      if (sessionId && transports.has(sessionId)) {
+        const transport = transports.get(sessionId);
+        await transport.handleRequest(req, res);
+        transports.delete(sessionId);
+        return;
+      }
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    // For POST (initialize or subsequent requests), create a new transport per session
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: () => randomUUID(),
+      onsessioninitialized: (sessionId) => {
+        transports.set(sessionId, transport);
+      },
+    });
+
+    transport.onclose = () => {
+      if (transport.sessionId) {
+        transports.delete(transport.sessionId);
+      }
+    };
+
+    await server.connect(transport);
+    await transport.handleRequest(req, res, req.body);
+  } catch (err) {
+    console.error('MCP request error:', err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Internal server error' });
+    }
   }
-  await transport.handlePostMessage(req, res);
 });
 
 const PORT = process.env.PORT || 3000;
