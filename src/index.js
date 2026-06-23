@@ -9,7 +9,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
 const { StreamableHTTPServerTransport } = await import('@modelcontextprotocol/sdk/server/streamableHttp.js');
-const { server } = await import('./server.js');
+const { createServer } = await import('./server.js');
 
 console.error('Starting Northbeam MCP server...');
 
@@ -59,7 +59,8 @@ app.all('/mcp', async (req, res) => {
       return res.status(404).json({ error: 'Session not found' });
     }
 
-    // For POST (initialize or subsequent requests), create a new transport per session
+    // For POST (initialize or subsequent requests), create a fresh server + transport per session
+    const server = createServer();
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
       onsessioninitialized: (sessionId) => {
@@ -75,6 +76,12 @@ app.all('/mcp', async (req, res) => {
 
     await server.connect(transport);
     await transport.handleRequest(req, res, req.body);
+    // Clean up server when transport closes
+    transport.onclose = () => {
+      if (transport.sessionId) {
+        transports.delete(transport.sessionId);
+      }
+    };
   } catch (err) {
     console.error('MCP request error:', err);
     if (!res.headersSent) {
