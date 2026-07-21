@@ -1,131 +1,77 @@
 #!/usr/bin/env node
+/**
+ * northbeam-mcp — local stdio MCP server for Northbeam analytics.
+ *
+ * CRITICAL: Never use console.log here. stdout is the JSON-RPC channel.
+ * All logging must go to console.error (stderr).
+ */
+
+// Must be the first import so env is available before any module that may
+// eventually read process.env. Client credentials are still read lazily at
+// call time as a second layer of protection against ESM import hoisting.
+import 'dotenv/config';
+
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { randomUUID } from 'crypto';
 import dotenv from 'dotenv';
-import express from 'express';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 
+// Resolve .env relative to this file so the server works no matter which
+// working directory Claude Desktop / the inspector launches it from.
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.join(__dirname, '..', '.env') });
-
-const { StreamableHTTPServerTransport } = await import('@modelcontextprotocol/sdk/server/streamableHttp.js');
-const { createServer } = await import('./server.js');
-
-console.error('Starting Northbeam MCP server...');
-
-if (!process.env.NORTHBEAM_API_KEY) {
-  console.error('Error: NORTHBEAM_API_KEY environment variable is required');
-  process.exit(1);
-}
-
-if (!process.env.NORTHBEAM_CLIENT_ID) {
-  console.error('Error: NORTHBEAM_CLIENT_ID environment variable is required');
-  process.exit(1);
-}
-
-const app = express();
-app.use(express.json());
-
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', service: 'northbeam-mcp' });
+dotenv.config({
+  path: path.resolve(__dirname, '../.env'),
 });
 
-// Log all incoming requests
-app.use((req, _res, next) => {
-  console.error(`[${new Date().toISOString()}] ${req.method} ${req.path} | accept: ${req.headers['accept'] || '(none)'} | auth: ${req.headers['authorization'] ? 'present' : 'none'}`);
-  next();
-});
+import * as listMetrics from './tools/listMetrics.js';
+import * as listDimensions from './tools/listDimensions.js';
+import * as getMetric from './tools/getMetric.js';
+import * as getChannelPerformance from './tools/getChannelPerformance.js';
+import * as getCohortAnalysis from './tools/getCohortAnalysis.js';
+import * as getAttribution from './tools/getAttribution.js';
 
-// Middleware: inject the Accept header required by StreamableHTTPServerTransport for any MCP path.
-// manus-mcp-cli sends the correct Accept header but posts to "/" (root), not "/mcp".
-// We apply this to all routes so it works regardless of which path the client uses.
-// NOTE: @hono/node-server reads from req.rawHeaders, not req.headers, so we patch both.
-function injectAcceptHeader(req, _res, next) {
-  const accept = req.headers['accept'] || '';
-  if (!accept.includes('text/event-stream')) {
-    const newAccept = accept
-      ? `${accept}, application/json, text/event-stream`
-      : 'application/json, text/event-stream';
-    req.headers['accept'] = newAccept;
-    const rawHeaders = req.rawHeaders;
-    const acceptIdx = rawHeaders.findIndex((v, i) => i % 2 === 0 && v.toLowerCase() === 'accept');
-    if (acceptIdx !== -1) {
-      rawHeaders[acceptIdx + 1] = newAccept;
-    } else {
-      rawHeaders.push('Accept', newAccept);
-    }
-  }
-  next();
-}
-
-// Map of sessionId -> StreamableHTTPServerTransport for stateful sessions
-const transports = new Map();
-
-// Core MCP request handler - shared by both "/" and "/mcp" routes
-async function handleMcpRequest(req, res) {
-  try {
-    // For GET requests (SSE stream), reuse the existing transport for the session if present
-    if (req.method === 'GET') {
-      const sessionId = req.headers['mcp-session-id'];
-      if (sessionId && transports.has(sessionId)) {
-        await transports.get(sessionId).handleRequest(req, res);
-        return;
-      }
-    }
-
-    // For DELETE requests, close the session transport
-    if (req.method === 'DELETE') {
-      const sessionId = req.headers['mcp-session-id'];
-      if (sessionId && transports.has(sessionId)) {
-        const transport = transports.get(sessionId);
-        await transport.handleRequest(req, res);
-        transports.delete(sessionId);
-        return;
-      }
-      return res.status(404).json({ error: 'Session not found' });
-    }
-
-    // For POST requests with an existing session ID, reuse the existing transport
-    if (req.method === 'POST') {
-      const sessionId = req.headers['mcp-session-id'];
-      if (sessionId && transports.has(sessionId)) {
-        await transports.get(sessionId).handleRequest(req, res, req.body);
-        return;
-      }
-    }
-
-    // For POST (initialize) without a session ID, create a fresh server + transport
-    const server = createServer();
-    const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: () => randomUUID(),
-      onsessioninitialized: (sessionId) => {
-        transports.set(sessionId, transport);
-      },
-    });
-
-    transport.onclose = () => {
-      if (transport.sessionId) {
-        transports.delete(transport.sessionId);
-      }
-    };
-
-    await server.connect(transport);
-    await transport.handleRequest(req, res, req.body);
-  } catch (err) {
-    console.error('MCP request error:', err);
-    if (!res.headersSent) {
-      res.status(500).json({ error: 'Internal server error' });
-    }
+function requireEnv(name) {
+  if (!process.env[name] || String(process.env[name]).trim() === '') {
+    const message = `Missing required environment variable: ${name}. Copy .env.example to .env and fill in your Northbeam credentials.`;
+    console.error(message);
+    throw new Error(message);
   }
 }
 
-// Handle MCP at root "/" — this is where manus-mcp-cli posts when the connector URL is the base URL
-app.all('/', injectAcceptHeader, handleMcpRequest);
+requireEnv('NORTHBEAM_API_KEY');
+requireEnv('NORTHBEAM_CLIENT_ID');
 
-// Also handle MCP at "/mcp" for clients that append the path
-app.all('/mcp', injectAcceptHeader, handleMcpRequest);
+const tools = [
+  listMetrics,
+  listDimensions,
+  getMetric,
+  getChannelPerformance,
+  getCohortAnalysis,
+  getAttribution,
+];
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, '0.0.0.0', () => {
-  console.error(`Northbeam MCP server running on port ${PORT}`);
+const server = new McpServer({
+  name: 'northbeam-mcp',
+  version: '1.0.0',
+});
+
+for (const tool of tools) {
+  const hasParams = tool.schema && Object.keys(tool.schema).length > 0;
+  if (hasParams) {
+    server.tool(tool.name, tool.description, tool.schema, tool.handler);
+  } else {
+    server.tool(tool.name, tool.description, tool.handler);
+  }
+}
+
+async function main() {
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+  console.error('northbeam-mcp running on stdio');
+}
+
+main().catch((err) => {
+  console.error('Fatal error starting northbeam-mcp:', err);
+  process.exit(1);
 });

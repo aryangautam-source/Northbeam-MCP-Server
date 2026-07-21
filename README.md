@@ -1,116 +1,133 @@
-# Northbeam MCP Server
+# northbeam-mcp
 
-A Model Context Protocol (MCP) server for **VKTRY Gear** that exposes Northbeam marketing analytics to AI clients. Query metrics, dimensions, channel performance, attribution, and cohort data through Claude Desktop, Manus, or any MCP-compatible client.
+Local **stdio** Model Context Protocol (MCP) server that exposes Northbeam marketing analytics as tools. No HTTP, no SSE, no hosted deployment — Claude Desktop (or the MCP Inspector) spawns this as a local Node process and talks JSON-RPC over stdin/stdout.
 
-**Hosted endpoint:** `https://northbeam-mcp-server-production.up.railway.app/mcp`
+## Prerequisites
 
----
+- Node.js 18+
+- Northbeam API key and Data Client ID
 
-## Connect via Claude Desktop
+## Setup
 
-Add the hosted server to your Claude Desktop config (`claude_desktop_config.json`):
+```bash
+git clone <this-repo>
+cd Northbeam-MCP-Server
+npm install
+cp .env.example .env
+```
+
+Edit `.env`:
+
+```
+NORTHBEAM_API_KEY=your_northbeam_api_key_here
+NORTHBEAM_CLIENT_ID=your_northbeam_client_id_here
+NORTHBEAM_BRAND=your_brand_name_here
+```
+
+The server fails immediately on startup (clear stderr message) if `NORTHBEAM_API_KEY` or `NORTHBEAM_CLIENT_ID` is missing.
+
+## Claude Desktop config (stdio)
+
+Add to `claude_desktop_config.json` (macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`):
 
 ```json
 {
   "mcpServers": {
     "northbeam": {
-      "url": "https://northbeam-mcp-server-production.up.railway.app/mcp",
-      "headers": {
-        "Authorization": "Bearer YOUR_MCP_AUTH_TOKEN"
-      }
+      "command": "node",
+      "args": ["/ABSOLUTE/PATH/TO/Northbeam-MCP-Server/src/index.js"]
     }
   }
 }
 ```
 
-Replace `YOUR_MCP_AUTH_TOKEN` with the Bearer token from Railway (or your local `.env` `MCP_AUTH_TOKEN`). Restart Claude Desktop after saving.
+Replace `/ABSOLUTE/PATH/TO/Northbeam-MCP-Server` with the real path on your machine. Restart Claude Desktop after saving.
 
----
+Credentials are loaded from the package `.env` via path resolution relative to `src/index.js`, so the launch working directory does not matter.
 
-## Connect via Manus
+## Testing with MCP Inspector
 
-1. Open Manus MCP / custom server settings.
-2. Set the server URL to:
-   ```
-   https://northbeam-mcp-server-production.up.railway.app/mcp
-   ```
-3. Add an Authorization header:
-   ```
-   Bearer YOUR_MCP_AUTH_TOKEN
-   ```
-4. Save and reconnect.
+```bash
+npx @modelcontextprotocol/inspector node src/index.js
+```
 
----
+Or:
+
+```bash
+npm run inspect
+```
 
 ## Available tools
 
-| Tool | Description |
-|------|-------------|
-| `list_metrics` | List available Northbeam metrics |
-| `list_dimensions` | List available Northbeam dimensions |
-| `get_channel_performance` | Channel performance data |
-| `get_attribution` | Attribution data |
-| `get_cohort_analysis` | Cohort analysis data |
-| `get_metric` | Fetch data for a specific metric |
+| Tool | Params | Description |
+|------|--------|-------------|
+| `list_metrics` | _(none)_ | All available Northbeam metric IDs/labels |
+| `list_dimensions` | _(none)_ | All available dimension/breakdown IDs/labels |
+| `get_metric` | `metric_name`, `start_date`, `end_date`, `attribution_model` | Single-metric export for a date range |
+| `get_channel_performance` | `start_date`, `end_date`, `attribution_model`, optional `channel` | Platform/channel performance |
+| `get_cohort_analysis` | `start_date`, `end_date`, `cohort_dimension` | Breakdown by a cohort dimension key |
+| `get_attribution` | `model`, `start_date`, `end_date`, `metrics` | Attribution-broken-down metrics |
 
----
+`attribution_model` / friendly `model` values:
 
-## Verify the connection
+| Value | Northbeam API id |
+|-------|------------------|
+| `clicks_only` | `northbeam_custom` |
+| `first_touch` | `first_touch` |
+| `last_touch` | `last_touch` |
 
-The health endpoint does not require auth:
+Dates must be `YYYY-MM-DD`. Invalid or missing params return an MCP tool error (`isError: true`), not a process crash.
 
-```bash
-curl https://northbeam-mcp-server-production.up.railway.app/health
-```
+## Northbeam API behavior (exact)
 
-Expected response:
+| Step | Method | URL |
+|------|--------|-----|
+| Create export | `POST` | `https://api.northbeam.io/v1/exports/data-export` |
+| Poll result | `GET` | `https://api.northbeam.io/v1/exports/data-export/result/{export_id}` |
+
+Auth headers on every request:
+
+- `Authorization: Basic {NORTHBEAM_API_KEY}`
+- `Data-Client-ID: {NORTHBEAM_CLIENT_ID}`
+
+Polling: every **2.5s** until `status === "SUCCESS"`, hard timeout **60s** (throws a clear timeout error). On success, `result[0]` is a CSV download URL; the client downloads and parses it to JSON rows for the tool response.
+
+List tools use:
+
+- Metrics: `GET /v1/exports/metrics`
+- Dimensions: `GET /v1/exports/breakdowns`
+
+Fixed-period exports send:
 
 ```json
-{"status":"ok","service":"northbeam-mcp"}
+{
+  "period_type": "FIXED",
+  "period_options": {
+    "period_starting_at": "YYYY-MM-DDT00:00:00Z",
+    "period_ending_at": "YYYY-MM-DDT23:59:59Z"
+  }
+}
 ```
 
-To confirm auth works against the MCP endpoint:
+## Development
 
 ```bash
-curl -H "Authorization: Bearer YOUR_MCP_AUTH_TOKEN" \
-  https://northbeam-mcp-server-production.up.railway.app/mcp
+npm run dev    # node --watch src/index.js
+npm start      # node src/index.js
 ```
 
----
-
-## Run locally (development)
-
-```bash
-git clone https://github.com/aryangautam-source/Northbeam-MCP-Server.git
-cd Northbeam-MCP-Server
-npm install
-```
-
-Create a `.env` file in the project root:
+## Project layout
 
 ```
-NORTHBEAM_API_KEY=your_northbeam_api_key
-NORTHBEAM_CLIENT_ID=your_northbeam_client_id
-MCP_AUTH_TOKEN=your_bearer_token
+src/
+  index.js              # stdio MCP entry (dotenv first; no console.log)
+  northbeamClient.js    # auth, export create, poll, CSV parse
+  tools/                # one file per tool (schema + handler)
 ```
 
-Start the server:
+## Important constraints
 
-```bash
-npm start
-```
-
-The server listens on `PORT` (default `3000`). Local MCP URL: `http://localhost:3000/mcp`.
-
-Optional scripts:
-
-- `npm run dev` — start with file watching
-- `npm run inspect` — open the MCP Inspector
-
----
-
-## Security
-
-- **Never commit `.env`** — it is gitignored. Credentials must not land in the repository.
-- Production secrets (`NORTHBEAM_API_KEY`, `NORTHBEAM_CLIENT_ID`, `MCP_AUTH_TOKEN`) live in **Railway environment variables** only.
-- The MCP and message endpoints require a valid Bearer token; do not share or hardcode that token in docs, configs checked into git, or chat logs.
+1. **Never write to stdout** except the MCP SDK transport — use `console.error` for logs. Stray `console.log` corrupts JSON-RPC.
+2. Credentials are read **at call time**, not at module import time.
+3. No absolute machine paths in code; `.env` is resolved via `import.meta.url`.
+4. `@modelcontextprotocol/sdk` is **pinned** to `1.29.0` (not a floating range).
