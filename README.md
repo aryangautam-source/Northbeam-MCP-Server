@@ -6,17 +6,18 @@ Local **stdio** Model Context Protocol (MCP) server that exposes Northbeam marke
 
 - Node.js 18+
 - Northbeam API key and Data Client ID
+- Git
 
-## Setup
+## Install locally (everyone starts here)
 
 ```bash
-git clone <this-repo>
+git clone https://github.com/aryangautam-source/Northbeam-MCP-Server.git
 cd Northbeam-MCP-Server
 npm install
 cp .env.example .env
 ```
 
-Edit `.env`:
+Edit `.env` with your credentials:
 
 ```
 NORTHBEAM_API_KEY=your_northbeam_api_key_here
@@ -24,28 +25,96 @@ NORTHBEAM_CLIENT_ID=your_northbeam_client_id_here
 NORTHBEAM_BRAND=your_brand_name_here
 ```
 
+Resolve the absolute path to the entry file (you will paste this into client configs):
+
+```bash
+# macOS / Linux
+echo "$(pwd)/src/index.js"
+```
+
 The server fails immediately on startup (clear stderr message) if `NORTHBEAM_API_KEY` or `NORTHBEAM_CLIENT_ID` is missing.
 
-## Claude Desktop config (stdio)
+---
 
-Add to `claude_desktop_config.json` (macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`):
+## Connect in Claude Desktop (local stdio)
+
+Claude Desktop can spawn this server as a local subprocess. That is the intended production path for this repo.
+
+1. Finish **Install locally** above.
+2. Open Claude Desktop → **Settings** → **Developer** → **Edit Config**  
+   (or edit the file directly):
+   - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+   - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+3. Add (or replace) the `northbeam` entry under `mcpServers`. Use your real absolute path:
 
 ```json
 {
   "mcpServers": {
     "northbeam": {
       "command": "node",
-      "args": ["/ABSOLUTE/PATH/TO/Northbeam-MCP-Server/src/index.js"]
+      "args": [
+        "/ABSOLUTE/PATH/TO/Northbeam-MCP-Server/src/index.js"
+      ]
     }
   }
 }
 ```
 
-Replace `/ABSOLUTE/PATH/TO/Northbeam-MCP-Server` with the real path on your machine. Restart Claude Desktop after saving.
+Example on this machine:
 
-Credentials are loaded from the package `.env` via path resolution relative to `src/index.js`, so the launch working directory does not matter.
+```json
+{
+  "mcpServers": {
+    "northbeam": {
+      "command": "node",
+      "args": [
+        "/Users/aryan/Northbeam-MCP-Server/src/index.js"
+      ]
+    }
+  }
+}
+```
+
+4. **Fully quit and reopen** Claude Desktop (not just close the window).
+5. Start a new chat and confirm the `northbeam` tools appear (e.g. `list_metrics`).
+
+Credentials are loaded from the package `.env` via path resolution relative to `src/index.js`, so Claude’s launch working directory does not matter. Do **not** put API keys in `claude_desktop_config.json`.
+
+### Troubleshoot Claude
+
+- Tools missing → confirm the path exists (`ls` the `args` path) and Node is on your PATH (`which node`).
+- Server crashes on start → check Claude MCP logs; missing env vars print to stderr.
+- Never add `console.log` to this server — it breaks the JSON-RPC stdio channel.
+
+---
+
+## Connect in Manus
+
+**Important:** Manus Custom MCP expects a **public HTTPS** MCP endpoint. This repository is **stdio-only** by design (no HTTP/SSE transport), so Manus cloud **cannot** attach directly to `localhost` or spawn `node src/index.js` the way Claude Desktop does.
+
+### What to do instead
+
+| Goal | Use |
+|------|-----|
+| Query Northbeam locally on your machine | **Claude Desktop** (stdio, steps above) |
+| Verify the server / tools before wiring a client | **MCP Inspector** (below) |
+| Use Manus with Northbeam | Manus needs a separately hosted Streamable HTTP MCP URL — **not included in this repo** |
+
+### If you still want Northbeam available while working in Manus
+
+1. Keep this server running for local Claude / Inspector use as documented above.
+2. In Manus: **Settings → Integrations → Custom MCP Servers → Add Server**.
+3. Manus will ask for a **Server URL** (HTTPS). Paste only a URL that Manus’s cloud can reach.
+4. Optionally add an Authorization header if that remote server requires one.
+5. Click **Test Connection**, then **Save**.
+
+Do **not** paste `http://localhost:...` into Manus — it will fail verification because Manus cannot reach your laptop.
+
+---
 
 ## Testing with MCP Inspector
+
+From the repo root (after `npm install` and `.env` setup):
 
 ```bash
 npx @modelcontextprotocol/inspector node src/index.js
@@ -56,6 +125,10 @@ Or:
 ```bash
 npm run inspect
 ```
+
+Open the Inspector UI, connect, and try `list_metrics`.
+
+---
 
 ## Available tools
 
