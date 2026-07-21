@@ -1,6 +1,6 @@
 # northbeam-mcp
 
-Local **stdio** Model Context Protocol (MCP) server that exposes Northbeam marketing analytics as tools. No HTTP, no SSE, no hosted deployment — Claude Desktop (or the MCP Inspector) spawns this as a local Node process and talks JSON-RPC over stdin/stdout.
+Local **stdio** Model Context Protocol (MCP) server that exposes Northbeam marketing analytics as tools. No HTTP, no SSE, no hosted deployment — Claude Desktop, Manus (STDIO transport), or the MCP Inspector spawn this as a local Node process and talk JSON-RPC over stdin/stdout.
 
 ## Prerequisites
 
@@ -88,27 +88,38 @@ Credentials are loaded from the package `.env` via path resolution relative to `
 
 ---
 
-## Connect in Manus
+## Connect in Manus (local STDIO)
 
-**Important:** Manus Custom MCP expects a **public HTTPS** MCP endpoint. This repository is **stdio-only** by design (no HTTP/SSE transport), so Manus cloud **cannot** attach directly to `localhost` or spawn `node src/index.js` the way Claude Desktop does.
+Manus Custom MCP supports **STDIO** as well as remote HTTP. Use STDIO for this repo — same local Node process as Claude Desktop.
 
-### What to do instead
+1. Finish **Install locally** above (clone, `npm install`, `.env`).
+2. In Manus open **MCP configuration** (Custom MCP / Integrations) → add a server.
+3. Fill the form:
 
-| Goal | Use |
-|------|-----|
-| Query Northbeam locally on your machine | **Claude Desktop** (stdio, steps above) |
-| Verify the server / tools before wiring a client | **MCP Inspector** (below) |
-| Use Manus with Northbeam | Manus needs a separately hosted Streamable HTTP MCP URL — **not included in this repo** |
+| Field | Value |
+|-------|--------|
+| **Server Name** | `northbeam` (or any label you like) |
+| **Transport Type** | `STDIO` |
+| **Icon** | optional |
+| **Note (optional)** | e.g. `Northbeam marketing analytics: metrics, dimensions, channel performance, attribution, cohorts. Prefer list_metrics / list_dimensions before querying.` |
+| **Command** | Absolute path to Node, e.g. `/opt/homebrew/bin/node` (run `which node` if unsure). Plain `node` also works if Manus inherits your PATH. |
+| **Arguments** | One argument: absolute path to `src/index.js`, e.g. `/Users/YOU/Northbeam-MCP-Server/src/index.js` |
+| **Environment variables** | Optional if `.env` is already filled. Otherwise add `NORTHBEAM_API_KEY` and `NORTHBEAM_CLIENT_ID`. |
 
-### If you still want Northbeam available while working in Manus
+4. Save / connect, then confirm tools like `list_metrics` are available.
 
-1. Keep this server running for local Claude / Inspector use as documented above.
-2. In Manus: **Settings → Integrations → Custom MCP Servers → Add Server**.
-3. Manus will ask for a **Server URL** (HTTPS). Paste only a URL that Manus’s cloud can reach.
-4. Optionally add an Authorization header if that remote server requires one.
-5. Click **Test Connection**, then **Save**.
+### Example for this machine
 
-Do **not** paste `http://localhost:...` into Manus — it will fail verification because Manus cannot reach your laptop.
+- **Command:** `/opt/homebrew/bin/node`
+- **Arguments:** `/Users/aryan/Northbeam-MCP-Server/src/index.js`
+
+(Replace the username/path if your clone lives elsewhere.)
+
+### Troubleshoot Manus STDIO
+
+- Connection fails → use absolute paths for both Command and Arguments; confirm `ls` on the script path and that `npm install` was run in that clone.
+- Auth errors → ensure `.env` in the repo root has `NORTHBEAM_API_KEY` and `NORTHBEAM_CLIENT_ID`, or set the same keys under **Environment variables** in the Manus form.
+- Prefer STDIO over HTTP for this project — this server does not expose an HTTP/SSE endpoint.
 
 ---
 
