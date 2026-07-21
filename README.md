@@ -60,21 +60,6 @@ Claude Desktop can spawn this server as a local subprocess. That is the intended
 }
 ```
 
-Example on this machine:
-
-```json
-{
-  "mcpServers": {
-    "northbeam": {
-      "command": "node",
-      "args": [
-        "/Users/aryan/Northbeam-MCP-Server/src/index.js"
-      ]
-    }
-  }
-}
-```
-
 4. **Fully quit and reopen** Claude Desktop (not just close the window).
 5. Start a new chat and confirm the `northbeam` tools appear (e.g. `list_metrics`).
 
