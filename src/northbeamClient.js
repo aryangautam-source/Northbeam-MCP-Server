@@ -7,7 +7,7 @@
 
 const BASE_URL = 'https://api.northbeam.io/v1';
 const POLL_INTERVAL_MS = 2500;
-const POLL_TIMEOUT_MS = 60_000;
+const POLL_TIMEOUT_MS = 300_000;
 
 const ATTRIBUTION_MODEL_MAP = {
   clicks_only: 'northbeam_custom',
@@ -50,8 +50,9 @@ async function parseJsonResponse(response) {
   }
 
   if (!response.ok) {
+    const detail = body && (body.message ?? body.error ?? body);
     const message =
-      (body && (body.message || body.error || JSON.stringify(body))) ||
+      (typeof detail === 'string' ? detail : detail && JSON.stringify(detail)) ||
       text ||
       response.statusText;
     throw new Error(`Northbeam API error (HTTP ${response.status}): ${message}`);
@@ -165,6 +166,25 @@ export const northbeamClient = {
     return request('GET', '/exports/breakdowns');
   },
 
+  /**
+   * The API requires breakdowns[].values, and an empty array matches nothing.
+   * To mean "all values", the full list for the key must be sent explicitly.
+   */
+  async getBreakdownValues(key) {
+    if (!this._breakdownCache) {
+      const data = await this.listDimensions();
+      this._breakdownCache = new Map(
+        (data?.breakdowns || []).map((b) => [b.key, b.values || []])
+      );
+    }
+    const values = this._breakdownCache.get(key);
+    if (!values) {
+      const known = [...this._breakdownCache.keys()].join(', ');
+      throw new Error(`Unknown breakdown key "${key}". Valid keys: ${known}`);
+    }
+    return values;
+  },
+
   async createExport(payload) {
     const data = await request('POST', '/exports/data-export', payload);
     if (!data?.id) {
@@ -174,7 +194,7 @@ export const northbeamClient = {
   },
 
   /**
-   * Poll export result every ~2.5s until status === "SUCCESS", or throw after 60s.
+   * Poll export result every ~2.5s until status === "SUCCESS", or throw after POLL_TIMEOUT_MS.
    * Returns the first download URL from result[].
    */
   async pollExport(exportId) {
@@ -219,14 +239,14 @@ export const northbeamClient = {
       period_type: 'FIXED',
       period_options: toPeriodOptions(start_date, end_date),
       options: {
-        export_aggregation: 'BREAKDOWN',
+        export_aggregation: 'DATE',
         remove_zero_spend: false,
         aggregate_data: true,
       },
       attribution_options: {
         attribution_models: [model],
-        accounting_modes: ['accrual'],
-        attribution_windows: ['1'],
+        accounting_modes: ['cash'],
+        attribution_windows: ['infinity'],
       },
       metrics: [{ id: metric_name }],
     });
@@ -234,6 +254,9 @@ export const northbeamClient = {
 
   async getChannelPerformance({ start_date, end_date, attribution_model, channel }) {
     const model = resolveAttributionModel(attribution_model);
+    const values = channel
+      ? [channel]
+      : await this.getBreakdownValues('Platform (Northbeam)');
     const payload = {
       level: 'platform',
       time_granularity: 'DAILY',
@@ -247,19 +270,19 @@ export const northbeamClient = {
       },
       attribution_options: {
         attribution_models: [model],
-        accounting_modes: ['accrual'],
-        attribution_windows: ['1'],
+        accounting_modes: ['cash'],
+        attribution_windows: ['infinity'],
       },
       metrics: [
         { id: 'spend' },
         { id: 'rev' },
         { id: 'cac' },
-        { id: 'transactions' },
+        { id: 'txns' },
       ],
       breakdowns: [
         {
           key: 'Platform (Northbeam)',
-          ...(channel ? { values: [channel] } : {}),
+          values,
         },
       ],
     };
@@ -268,6 +291,7 @@ export const northbeamClient = {
   },
 
   async getCohortAnalysis({ start_date, end_date, cohort_dimension }) {
+    const values = await this.getBreakdownValues(cohort_dimension);
     return this.runExport({
       level: 'platform',
       time_granularity: 'DAILY',
@@ -280,18 +304,19 @@ export const northbeamClient = {
       },
       attribution_options: {
         attribution_models: ['first_touch'],
-        accounting_modes: ['accrual'],
-        attribution_windows: ['1'],
+        accounting_modes: ['cash'],
+        attribution_windows: ['infinity'],
       },
       metrics: [
         { id: 'spend' },
         { id: 'rev' },
-        { id: 'transactions' },
+        { id: 'txns' },
         { id: 'aov' },
       ],
       breakdowns: [
         {
           key: cohort_dimension,
+          values,
         },
       ],
     });
@@ -299,6 +324,7 @@ export const northbeamClient = {
 
   async getAttribution({ model, start_date, end_date, metrics }) {
     const attributionModel = resolveAttributionModel(model);
+    const values = await this.getBreakdownValues('Platform (Northbeam)');
     return this.runExport({
       level: 'platform',
       time_granularity: 'DAILY',
@@ -311,13 +337,14 @@ export const northbeamClient = {
       },
       attribution_options: {
         attribution_models: [attributionModel],
-        accounting_modes: ['accrual'],
-        attribution_windows: ['1'],
+        accounting_modes: ['cash'],
+        attribution_windows: ['infinity'],
       },
       metrics: metrics.map((id) => ({ id })),
       breakdowns: [
         {
           key: 'Platform (Northbeam)',
+          values,
         },
       ],
     });
