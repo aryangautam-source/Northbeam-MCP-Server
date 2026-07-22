@@ -4,9 +4,41 @@ Local **stdio** Model Context Protocol (MCP) server that exposes Northbeam marke
 
 ## Prerequisites
 
-- Node.js 18+
-- Northbeam API key and Data Client ID
-- Git
+You need three things before anything else: **Node.js**, **Git**, and your **Northbeam credentials**. If you already have them, skip ahead to [Install locally](#install-locally-everyone-starts-here).
+
+### Node.js (version 18 or higher)
+
+Node.js is the program that actually runs this server. Check if you already have it:
+
+```bash
+node --version
+```
+
+If you see `v18.x.x` or higher, you're good. If you get "command not found" or a version below 18, install it:
+
+- **macOS:** Download the installer from [nodejs.org](https://nodejs.org) and run it. Pick the **LTS** version.
+- **Windows:** Same — go to [nodejs.org](https://nodejs.org), download the **LTS** installer, and run it.
+- **Linux:** Run `sudo apt install nodejs npm` (Ubuntu/Debian) or follow the guide at [nodejs.org](https://nodejs.org).
+
+After installing, close and reopen your terminal, then run `node --version` again to confirm.
+
+### Git
+
+Git is used to download this repo. Check if you have it:
+
+```bash
+git --version
+```
+
+If you get "command not found":
+
+- **macOS:** Run `xcode-select --install` in your terminal.
+- **Windows:** Download from [git-scm.com](https://git-scm.com) and run the installer.
+- **Linux:** Run `sudo apt install git`.
+
+### Northbeam API key and Data Client ID
+
+You need these from your Northbeam account. If you don't have them, ask your Northbeam account manager or check your Northbeam dashboard under **Settings → API**.
 
 ## Install locally (everyone starts here)
 
@@ -75,36 +107,57 @@ Credentials are loaded from the package `.env` via path resolution relative to `
 
 ## Connect in Manus (local STDIO)
 
-Manus Custom MCP supports **STDIO** as well as remote HTTP. Use STDIO for this repo — same local Node process as Claude Desktop.
+Manus needs to know two things: where Node.js is on your computer, and where this repo's entry file is. Follow these steps carefully — most connection failures happen because one of those two paths is wrong.
 
-1. Finish **Install locally** above (clone, `npm install`, `.env`).
-2. In Manus open **MCP configuration** (Custom MCP / Integrations) → add a server.
-3. Fill the form:
+### Step 1 — Find your Node.js path
 
-| Field | Value |
-|-------|--------|
-| **Server Name** | `northbeam` (or any label you like) |
+Open a terminal and run:
+
+```bash
+which node
+```
+
+You'll get back something like `/home/ubuntu/.nvm/versions/node/v22.13.0/bin/node` or `/opt/homebrew/bin/node`. **Copy that output.** You'll paste it into Manus in a moment.
+
+> **Why this matters:** Manus needs the full, exact path to Node.js on your machine. There is no universal default — it's different on every computer. If you leave the example path in or guess, the connection will fail with a confusing error.
+
+### Step 2 — Find your script path
+
+In the same terminal, go into the repo folder and run:
+
+```bash
+cd Northbeam-MCP-Server
+echo "$(pwd)/src/index.js"
+```
+
+Copy that output too (e.g. `/Users/yourname/Northbeam-MCP-Server/src/index.js`).
+
+### Step 3 — Add the server in Manus
+
+1. Make sure you've completed **Install locally** above (clone, `npm install`, `.env`).
+2. In Manus, open **Settings → Integrations → Custom MCP** and click **Add server**.
+3. Fill in the form using your copied paths:
+
+| Field | What to enter |
+|-------|---------------|
+| **Server Name** | `northbeam` (or any name you like) |
 | **Transport Type** | `STDIO` |
-| **Icon** | optional |
-| **Note (optional)** | e.g. `Northbeam marketing analytics: metrics, dimensions, channel performance, attribution, cohorts. Prefer list_metrics / list_dimensions before querying.` |
-| **Command** | Absolute path to Node, e.g. `/opt/homebrew/bin/node` (run `which node` if unsure). Plain `node` also works if Manus inherits your PATH. |
-| **Arguments** | One argument: absolute path to `src/index.js`, e.g. `/Users/YOU/Northbeam-MCP-Server/src/index.js` |
-| **Environment variables** | Optional if `.env` is already filled. Otherwise add `NORTHBEAM_API_KEY` and `NORTHBEAM_CLIENT_ID`. |
+| **Command** | Paste the output of `which node` from Step 1 |
+| **Arguments** | Paste the script path from Step 2 |
+| **Environment variables** | Leave blank if your `.env` file is already filled in. Otherwise add `NORTHBEAM_API_KEY` and `NORTHBEAM_CLIENT_ID` here. |
+| **Icon / Note** | Optional — skip if you want |
 
-4. Save / connect, then confirm tools like `list_metrics` are available.
+4. Click **Save / Connect**.
+5. Open a new Manus chat and ask it to run `list_metrics` — if you see a list of metrics, you're connected.
 
-### Example for this machine
+### Troubleshooting
 
-- **Command:** `/opt/homebrew/bin/node`
-- **Arguments:** `/Users/aryan/Northbeam-MCP-Server/src/index.js`
-
-(Replace the username/path if your clone lives elsewhere.)
-
-### Troubleshoot Manus STDIO
-
-- Connection fails → use absolute paths for both Command and Arguments; confirm `ls` on the script path and that `npm install` was run in that clone.
-- Auth errors → ensure `.env` in the repo root has `NORTHBEAM_API_KEY` and `NORTHBEAM_CLIENT_ID`, or set the same keys under **Environment variables** in the Manus form.
-- Prefer STDIO over HTTP for this project — this server does not expose an HTTP/SSE endpoint.
+| Symptom | Most likely cause | Fix |
+|---------|-------------------|-----|
+| Connection fails immediately | Wrong Node path in **Command** | Re-run `which node` and paste the exact output |
+| "No such file" error | Wrong script path in **Arguments** | Re-run the `echo` command in Step 2 and paste the exact output |
+| Tools don't appear | `npm install` was never run | Run `npm install` inside the repo folder, then reconnect |
+| Auth / API errors | Missing credentials | Make sure `.env` has `NORTHBEAM_API_KEY` and `NORTHBEAM_CLIENT_ID`, or add them under **Environment variables** in the Manus form |
 
 ---
 
