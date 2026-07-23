@@ -105,6 +105,58 @@ Credentials are loaded from the package `.env` via path resolution relative to `
 
 ---
 
+## Connect in Cursor (local stdio)
+
+Cursor spawns this server the exact same way as Claude Desktop — same Node process, same `.env`, same `command`/`args` shape. Only the config file location and a couple of UI steps differ.
+
+1. Finish **Install locally** above (clone, `npm install`, `.env`).
+2. Create the Cursor MCP config. Use one of:
+   - Project-level (only active in this repo): `.cursor/mcp.json` in the repo root.
+   - Global (active in every project): `~/.cursor/mcp.json`.
+3. Add (or replace) the `northbeam` entry under `mcpServers`. Use your real absolute path:
+
+```json
+{
+  "mcpServers": {
+    "northbeam": {
+      "command": "node",
+      "args": [
+        "/ABSOLUTE/PATH/TO/Northbeam-MCP-Server/src/index.js"
+      ]
+    }
+  }
+}
+```
+
+Example on this machine:
+
+```json
+{
+  "mcpServers": {
+    "northbeam": {
+      "command": "node",
+      "args": [
+        "/Users/aryan/Northbeam-MCP-Server/src/index.js"
+      ]
+    }
+  }
+}
+```
+
+4. Open Cursor **Settings** → **Tools & MCP** and confirm the `northbeam` server shows a **green** status indicator. If it isn't green, toggle the server on (or hit reload) and wait for it to connect.
+5. Open a new Composer/Agent chat and ask it to run `list_metrics` to confirm the tools are wired up.
+
+Credentials are loaded from the package `.env` via path resolution relative to `src/index.js`, so Cursor’s launch working directory does not matter. Do **not** put API keys in `.cursor/mcp.json`.
+
+### Troubleshoot Cursor
+
+- Tools missing → confirm the path in `args` exists (`ls` the `args` path) and Node is on your PATH (`which node`).
+- Server not green → wrong absolute path in `args` or `node` not found; use an absolute path to Node (e.g. `/opt/homebrew/bin/node`) if `node` isn’t resolved.
+- Tools not appearing after a config edit → toggle the `northbeam` server off and back on in **Settings** → **Tools & MCP**, or reload the window.
+- Never add `console.log` to this server — it breaks the JSON-RPC stdio channel.
+
+---
+
 ## Connect in Manus (local STDIO)
 
 Manus needs to know two things: where Node.js is on your computer, and where this repo's entry file is. Follow these steps carefully — most connection failures happen because one of those two paths is wrong.
