@@ -31,16 +31,10 @@ import * as getChannelPerformance from './tools/getChannelPerformance.js';
 import * as getCohortAnalysis from './tools/getCohortAnalysis.js';
 import * as getAttribution from './tools/getAttribution.js';
 
-function requireEnv(name) {
-  if (!process.env[name] || String(process.env[name]).trim() === '') {
-    const message = `Missing required environment variable: ${name}. Copy .env.example to .env and fill in your Northbeam credentials.`;
-    console.error(message);
-    throw new Error(message);
-  }
-}
-
-requireEnv('NORTHBEAM_API_KEY');
-requireEnv('NORTHBEAM_CLIENT_ID');
+// Credentials are NOT validated here at startup.
+// They are validated lazily at call time in northbeamClient.js.
+// This allows the server to start successfully in environments like Manus
+// where credentials are provided via the connector's env block rather than a local .env file.
 
 const tools = [
   listMetrics,
