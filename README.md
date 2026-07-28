@@ -60,7 +60,6 @@ NORTHBEAM_BRAND=your_brand_name_here
 Resolve the absolute path to the entry file (you will paste this into client configs):
 
 ```bash
-# macOS / Linux
 echo "$(pwd)/src/index.js"
 ```
 
@@ -294,3 +293,38 @@ src/
 2. Credentials are read **at call time**, not at module import time.
 3. No absolute machine paths in code; `.env` is resolved via `import.meta.url`.
 4. `@modelcontextprotocol/sdk` is **pinned** to `1.29.0` (not a floating range).
+
+---
+
+## Removing the connector
+
+### Manus
+
+1. Open **Settings → Integrations → Custom MCP**.
+2. Find the `northbeam` entry and click **Delete**.
+3. Start a new Manus chat and ask it to clean up the sandbox:
+
+```text
+Please delete the Northbeam MCP server repo from the sandbox:
+rm -rf /home/ubuntu/Northbeam-MCP-Server
+```
+
+### Claude Desktop
+
+1. Open `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows).
+2. Delete the `northbeam` entry under `mcpServers`.
+3. **Fully quit and reopen** Claude Desktop.
+
+### Cursor
+
+1. Open **Settings → MCP** (or edit `.cursor/mcp.json` in your project).
+2. Delete the `northbeam` entry.
+3. Restart Cursor.
+
+### Local repo (all clients)
+
+If you cloned the repo to your machine, delete it:
+
+```bash
+rm -rf /path/to/Northbeam-MCP-Server
+```
