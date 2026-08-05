@@ -158,7 +158,9 @@ Credentials are loaded from the package `.env` via path resolution relative to `
 
 ## Connect in Manus (local STDIO)
 
-When you connect a local STDIO server to Manus, Manus runs the server inside its own cloud sandbox — **not** on your local computer. This means your local `.env` file and local file paths are invisible to Manus. You must configure the connector so Manus can clone the repo and inject your credentials itself.
+When you connect a local STDIO server to Manus, Manus runs the server inside its own cloud sandbox — **not** on your local computer. This means your local `.env` file and local file paths are invisible to Manus. Manus sandboxes are also **ephemeral**: the filesystem resets on every new chat session, so the repo must be cloned fresh each time.
+
+> **How auto-setup works:** The connector's `note` field (set during Step 1 below) is injected into the Manus agent's context at the start of every session. It instructs the agent to check for the repo and clone it automatically before the first tool call — silently, every session, with no action required from you.
 
 ### Step 1 — Add the server in Manus
 
@@ -167,35 +169,39 @@ When you connect a local STDIO server to Manus, Manus runs the server inside its
 
 | Field | What to enter |
 |-------|---------------|
-| **Server Name** | `northbeam` (or any name you like) |
+| **Server Name** | `northbeam` |
 | **Transport Type** | `STDIO` |
 | **Command** | `node` |
 | **Arguments** | `/home/ubuntu/Northbeam-MCP-Server/src/index.js` |
-| **Environment variables** | **REQUIRED:** You must add `NORTHBEAM_API_KEY` and `NORTHBEAM_CLIENT_ID` here with your real credentials. |
-| **Icon / Note** | Optional — skip if you want |
+| **Environment variables** | **REQUIRED:** Add `NORTHBEAM_API_KEY` and `NORTHBEAM_CLIENT_ID` with your real credentials. |
+| **Note** | Paste the auto-setup note below — this is what makes it work automatically. |
 
 > **Important:** Do not use your local Mac/Windows paths. Use exactly `node` and `/home/ubuntu/Northbeam-MCP-Server/src/index.js`.
 
-3. Click **Save / Connect**.
+**Auto-setup note (paste this into the Note field verbatim):**
 
-### Step 2 — Ask Manus to set it up
-
-Start a new chat in Manus and paste this exact prompt:
-
-```text
-I've added the Northbeam MCP server to my connectors. Please set it up in the sandbox by running:
-cd /home/ubuntu && gh repo clone aryangautam-source/Northbeam-MCP-Server && cd Northbeam-MCP-Server && npm install
-
-Once done, test it by calling list_metrics.
+```
+Use the Northbeam MCP server to query attribution, channel performance, cohort analysis, and metric/dimension catalogs from Northbeam. IMPORTANT — Manus sandboxes are ephemeral: before calling any Northbeam tool, check whether /home/ubuntu/Northbeam-MCP-Server/src/index.js exists. If it does not, silently run: gh repo clone aryangautam-source/Northbeam-MCP-Server /home/ubuntu/Northbeam-MCP-Server && cd /home/ubuntu/Northbeam-MCP-Server && npm install --silent. Do this automatically before the first tool call without mentioning it to the user unless the command fails.
 ```
 
-Manus will clone the repo into its sandbox, install the dependencies, and the connector will start working because the credentials are securely injected from the environment variables you set in Step 1.
+3. Click **Save / Connect**.
+
+### How it works after setup
+
+Every new Manus session:
+1. Manus reads the connector note and injects it into the agent's context.
+2. Before the first Northbeam tool call, the agent checks if `/home/ubuntu/Northbeam-MCP-Server/src/index.js` exists.
+3. If it does not (fresh sandbox), the agent clones the repo and runs `npm install` silently — takes ~5 seconds.
+4. The MCP server starts and tool calls proceed normally.
+
+No manual intervention required. The note is the mechanism — do not delete it.
 
 ### Troubleshooting
 
 | Symptom | Most likely cause | Fix |
 |---------|-------------------|-----|
-| "No such file or directory" | Repo not cloned in sandbox | Ask Manus to run the clone and install command from Step 2. |
+| `server not found` on first call | Note field is empty or missing | Edit the connector in Settings → Custom MCP and paste the auto-setup note from Step 1 into the Note field. |
+| `server not found` persists after note is set | `gh` CLI not authenticated in sandbox | Ask Manus to run `gh auth status` and re-authenticate if needed. |
 | "Missing required environment variable" | Credentials not in Manus form | Go to Settings → Custom MCP and add `NORTHBEAM_API_KEY` and `NORTHBEAM_CLIENT_ID` to the Environment Variables section. |
 | Auth / API errors | Invalid credentials | Check that your API key and Client ID are correct in the Manus connector settings. |
 
