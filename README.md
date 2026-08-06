@@ -274,7 +274,8 @@ npm start      # node src/index.js
 
 ```
 src/
-  index.js              # stdio MCP entry (dotenv first; no console.log)
+  loadEnv.js            # first import: quiet, path-resolved .env load
+  index.js              # stdio MCP entry (loadEnv first; no console.log)
   northbeamClient.js    # auth, export create, poll, CSV parse
   tools/                # one file per tool (schema + handler)
 ```
@@ -283,8 +284,14 @@ src/
 
 1. **Never write to stdout** except the MCP SDK transport — use `console.error` for logs. Stray `console.log` corrupts JSON-RPC.
 2. Credentials are read **at call time**, not at module import time.
-3. No absolute machine paths in code; `.env` is resolved via `import.meta.url`.
-4. `@modelcontextprotocol/sdk` is **pinned** to `1.29.0` (not a floating range).
+3. No absolute machine paths in code; `.env` is resolved relative to the source file (`import.meta.url`) in `src/loadEnv.js`.
+
+### Dependency constraints
+
+4. `@modelcontextprotocol/sdk` is **pinned** to `1.29.0` (exact, not a floating range). It is deliberately not auto-bumped; changing it is a manual decision that must be made alongside this note, because the `overrides` below are tuned to its transitive tree.
+5. **`dotenv` must be loaded with `quiet: true`** (see `src/loadEnv.js`). dotenv `>= 17` prints an "injected env" banner to **stdout** by default, which violates constraint #1 and corrupts the JSON-RPC channel. `dotenv` is pinned at `17.4.2`; `zod` is pinned at `4.4.3`.
+6. `package.json` uses npm **`overrides`** to force patched versions of transitive dependencies pulled in — but never executed — by the SDK's unused HTTP/SSE transport subtree: `fast-uri`, `@hono/node-server`, `hono`, `ip-address`, `path-to-regexp`. Do not remove these without re-running `npm audit` (must report **0 vulnerabilities**); revisit them whenever the SDK pin (#4) changes.
+7. Dependabot bumps arrive **grouped** (see `.github/dependabot.yml`): routine minor/patch batched, majors isolated. Review majors individually — a `dotenv` or `zod` major can reintroduce the stdout-banner or schema-compat issues covered above.
 
 ---
 
