@@ -6,23 +6,15 @@
  * All logging must go to console.error (stderr).
  */
 
-// Must be the first import so env is available before any module that may
-// eventually read process.env. Client credentials are still read lazily at
-// call time as a second layer of protection against ESM import hoisting.
-import 'dotenv/config';
+// Must be the first import so env is loaded — quietly, from the package root —
+// before any module that may read process.env, and before the SDK's stdio
+// transport claims stdout. Loading it quietly is what keeps dotenv's banner off
+// the JSON-RPC channel; see loadEnv.js. Client credentials are still read lazily
+// at call time as a second layer of protection against ESM import hoisting.
+import './loadEnv.js';
 
-import path from 'path';
-import { fileURLToPath } from 'url';
-import dotenv from 'dotenv';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-
-// Resolve .env relative to this file so the server works no matter which
-// working directory Claude Desktop / the inspector launches it from.
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({
-  path: path.resolve(__dirname, '../.env'),
-});
 
 import * as listMetrics from './tools/listMetrics.js';
 import * as listDimensions from './tools/listDimensions.js';
